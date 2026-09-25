@@ -1,6 +1,7 @@
-import json #manipula dados no formato json
-import urllib.request #Permite abrir e ler URLs (endereços web), servindo para fazer requisições HTTP (como baixar páginas HTML ou consumir dados de uma API).
-import urllib.error #Gerencia as exceções (erros) que podem acontecer ao tentar acessar uma URL usando o módulo
+import json # manipula dados no formato json
+import urllib.request # Permite abrir e ler URLs (endereços web)
+import urllib.error # Gerencia as exceções (erros) ao tentar acessar uma URL
+import urllib.parse # Permite codificar textos para usar em URLs
 from datetime import datetime
 
 # ========== CONSTANTES ==========
@@ -8,10 +9,8 @@ from datetime import datetime
 ARQUIVO_JSON = "fotos.json"
 # Formato padrao de exibicao de datas: dd/mm/aaaa hh:mm
 FORMATO_DATA = "%d/%m/%Y %H:%M"
-# API externa Open-Meteo (gratuita, sem chave). Coordenadas de Sao Paulo.
-# current=cloud_cover,is_day retorna a nebulosidade (%) e se e dia (1) ou noite (0)
-API_CLIMA_URL = ("https://api.open-meteo.com/v1/forecast"
-                 "?latitude=-23.55&longitude=-46.63&current=cloud_cover,is_day")
+# API da Wikipedia em Português para buscar resumos de páginas
+API_WIKIPEDIA_URL = "https://pt.wikipedia.org/api/rest_v1/page/summary/"
 
 
 def menu():
@@ -27,7 +26,8 @@ def menu():
 7 - Editar foto
 8 - Apagar foto
 9 - Estatisticas do sistema
-10 - Sair
+10 - Resumo da Materia (Wikipedia AI)
+11 - Sair
 ==================================""")
 
 
@@ -159,33 +159,57 @@ def carregar_fotos():
     return fotos
 
 
-# ========== API EXTERNA (Open-Meteo) ==========
+# ========== API EXTERNA (Wikipedia) ==========
 
-def buscar_clima():
-    # ENTRADA: nenhuma (usa as coordenadas definidas em API_CLIMA_URL)
-    # PROCESSAMENTO: consulta a API Open-Meteo e le a nebulosidade e se e dia ou noite
-    # SAÍDA: retorna a tupla (cobertura_de_nuvens, is_day) ou None se a consulta falhar
+def buscar_resumo_wikipedia(assunto):
+    # ENTRADA: o assunto/nome da foto (ex: "Revolucao Francesa")
+    # PROCESSAMENTO: formata a URL e consome a API da Wikipedia para pegar um resumo
+    # SAÍDA: retorna o texto de resumo ou uma mensagem de erro
+    termo_formatado = urllib.parse.quote(assunto) # Converte espaços e acentos para formato web
+    url = API_WIKIPEDIA_URL + termo_formatado
+    
     try:
-        with urllib.request.urlopen(API_CLIMA_URL, timeout=5) as resposta:
+        # A Wikipedia exige um cabeçalho User-Agent para saber quem está acessando
+        requisicao = urllib.request.Request(url, headers={'User-Agent': 'CameraJovi_StudyAI/1.0'})
+        with urllib.request.urlopen(requisicao, timeout=5) as resposta:
             dados = json.load(resposta)
-        atual = dados["current"]
-        return int(atual["cloud_cover"]), int(atual["is_day"])
-    except (OSError, KeyError, ValueError, TypeError):
-        # OSError cobre URLError, HTTPError e TimeoutError (sem internet, API fora do ar, lentidao)
-        # KeyError/ValueError/TypeError cobrem resposta em formato inesperado ou JSON invalido
-        print("AVISO: nao foi possivel consultar a API de clima.")
-        return None
+            # Retorna a chave "extract", que contém o resumo em texto puro
+            return dados.get("extract", "Resumo nao disponivel para este termo.")
+            
+    except urllib.error.HTTPError as erro:
+        if erro.code == 404:
+            return "Assunto nao encontrado na base de dados da Wikipedia. Verifique se o nome da foto esta escrito corretamente (ex: 'Mitose', 'Guerra Fria')."
+        return f"Erro ao acessar a Wikipedia (Codigo: {erro.code})."
+    except (OSError, ValueError, TypeError):
+        return "AVISO: Nao foi possivel conectar a Wikipedia. Verifique sua internet."
 
 
-def sugerir_ajuste(nuvens, is_day):
-    # ENTRADA: cobertura de nuvens (0 a 100) e se e dia (1) ou noite (0)
-    # PROCESSAMENTO: define brilho e contraste conforme a luz ambiente
-    # SAÍDA: retorna a tupla (brilho, contraste) sugerida
-    if not is_day:
-        return 80, 60      # noite: compensa a pouca luz
-    if nuvens > 70:
-        return 65, 55      # dia muito nublado: luz mais fraca
-    return 50, 50          # dia claro: valores padrao
+def wikipedia_ai(fotos):
+    # ENTRADA: recebe a lista de fotos cadastradas
+    # PROCESSAMENTO: lista as fotos, pede para o usuario escolher uma e busca o resumo do assunto (nome da foto)
+    # SAÍDA: exibe um resumo enciclopedico sobre o assunto da foto
+    print("\n=== WIKIPEDIA AI - RESUMO DO ASSUNTO ===")
+    if not existem_fotos(fotos):
+        return
+        
+    print("Escolha a foto para ver o resumo do assunto correspondente:")
+    for i, f in enumerate(fotos, start=1):
+        print(f"{i}. {f['nome']} (Materia: {f['materia']})")
+        
+    indice = validar_inteiro("\nEscolha o numero da foto: ", 1, len(fotos))
+    foto_escolhida = fotos[indice - 1]
+    assunto = foto_escolhida["nome"]
+    
+    print(f"\nConsultando a Wikipedia sobre '{assunto}'...")
+    resumo = buscar_resumo_wikipedia(assunto)
+    
+    print("\n" + "="*50)
+    print(f"RESUMO: {assunto.upper()}")
+    print("="*50)
+    print(resumo)
+    print("="*50)
+    
+    aguardar_enter()
 
 
 # ========== FUNCIONALIDADES ==========
@@ -195,7 +219,8 @@ def cadastrar_foto(fotos):
     # PROCESSAMENTO: cria um dicionário com os dados da foto, adiciona à lista e salva no JSON
     # SAÍDA: exibe mensagem de confirmação do cadastro
     print("\n=== CADASTRAR FOTO ===")
-    nome = validar_texto("o nome da foto")
+    print("DICA: Use o assunto exato como NOME da foto (ex: 'Revolucao Francesa', 'Fotossintese') para melhor uso da IA.")
+    nome = validar_texto("o nome da foto (assunto)")
     materia = normalizar_materia(validar_texto("a materia relacionada a foto"))
     data = datetime.now()
     # append() adiciona o dicionário da nova foto ao final da lista de fotos
@@ -255,9 +280,8 @@ def fast_processing(fotos):
 
 
 def adaptive_capture(fotos):
-    # ENTRADA: recebe a lista de fotos; o usuário escolhe a foto e o modo (automático ou manual)
-    # PROCESSAMENTO: no modo automático consulta a API de clima e sugere brilho/contraste;
-    #                se a API falhar (ou no modo manual) pede os valores ao usuário
+    # ENTRADA: recebe a lista de fotos; o usuário escolhe a foto
+    # PROCESSAMENTO: como a API de clima foi removida, realiza o ajuste manual direto
     # SAÍDA: exibe confirmação com os novos valores aplicados e salva no JSON
     print("\n=== ADAPTIVE CAPTURE - AJUSTE DE BRILHO E CONTRASTE ===")
     print("Ajuste a luz e o contraste para garantir uma boa captura em qualquer ambiente.")
@@ -267,35 +291,14 @@ def adaptive_capture(fotos):
     for i, f in enumerate(fotos, start=1):
         print(f"{i}. {f['nome']} - Brilho: {f['brilho']} | Contraste: {f['contraste']}")
 
-    indice = validar_inteiro("Escolha o numero da foto para ajustar: ", 1, len(fotos))
+    indice = validar_inteiro("\nEscolha o numero da foto para ajustar: ", 1, len(fotos))
     foto = fotos[indice - 1]
 
     print(f"\nFoto selecionada: {foto['nome']}")
     print(f"Brilho atual: {foto['brilho']} | Contraste atual: {foto['contraste']}")
 
-    print("\n1 - Sugestao automatica (consulta o clima atual pela internet)")
-    print("2 - Ajuste manual")
-    modo = validar_inteiro("Escolha o modo: ", 1, 2)
-
-    brilho = None
-    contraste = None
-
-    if modo == 1:
-        print("Consultando a API de clima...")
-        clima = buscar_clima()
-        if clima is not None:
-            nuvens, is_day = clima
-            periodo = "dia" if is_day else "noite"
-            print(f"Condicao atual: {periodo}, {nuvens}% de nuvens.")
-            brilho, contraste = sugerir_ajuste(nuvens, is_day)
-            print(f"Sugestao aplicada -> Brilho: {brilho} | Contraste: {contraste}")
-        else:
-            print("Nao foi possivel usar a sugestao automatica. Faca o ajuste manual.")
-
-    # Modo manual escolhido pelo usuario ou fallback quando a API falha
-    if brilho is None:
-        brilho = validar_inteiro("Novo brilho (0 a 100): ", 0, 100)
-        contraste = validar_inteiro("Novo contraste (0 a 100): ", 0, 100)
+    brilho = validar_inteiro("Novo brilho (0 a 100): ", 0, 100)
+    contraste = validar_inteiro("Novo contraste (0 a 100): ", 0, 100)
 
     foto["brilho"] = brilho
     foto["contraste"] = contraste
@@ -461,6 +464,8 @@ def main():
                 case "9":
                     estatisticas(fotos)
                 case "10":
+                    wikipedia_ai(fotos)
+                case "11":
                     print("Saindo do programa. Ate logo!")
                     break
                 case _:
