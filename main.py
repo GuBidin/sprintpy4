@@ -2,6 +2,7 @@ import json # manipula dados no formato json
 import urllib.request # Permite abrir e ler URLs (endereços web)
 import urllib.error # Gerencia as exceções (erros) ao tentar acessar uma URL
 import urllib.parse # Permite codificar textos para usar em URLs
+import textwrap # define uma largura máxima para a linha (por exemplo, 80 caracteres), e ela mesma quebra o texto em várias linhas nos espaços em branco, sem cortar palavras no meio.
 from datetime import datetime
 
 # ========== CONSTANTES ==========
@@ -11,6 +12,8 @@ ARQUIVO_JSON = "fotos.json"
 FORMATO_DATA = "%d/%m/%Y %H:%M"
 # API da Wikipedia em Português para buscar resumos de páginas
 API_WIKIPEDIA_URL = "https://pt.wikipedia.org/api/rest_v1/page/summary/"
+# URL da Action API para busca inteligente (OpenSearch)
+API_BUSCA_URL = "https://pt.wikipedia.org/w/api.php"
 
 
 def menu():
@@ -163,12 +166,30 @@ def carregar_fotos():
 
 def buscar_resumo_wikipedia(assunto):
     # ENTRADA: o assunto/nome da foto (ex: "Revolucao Francesa")
-    # PROCESSAMENTO: formata a URL e consome a API da Wikipedia para pegar um resumo
+    # PROCESSAMENTO: busca o termo inteligente na Wikipedia e consome a API para pegar um resumo
     # SAÍDA: retorna o texto de resumo ou uma mensagem de erro
-    termo_formatado = urllib.parse.quote(assunto) # Converte espaços e acentos para formato web
-    url = API_WIKIPEDIA_URL + termo_formatado
-    
     try:
+        # ETAPA 1: Usa o OpenSearch da Action API para encontrar o título oficial correto (ex: "pitagoras" -> "Pitágoras")
+        parametros_busca = urllib.parse.urlencode({
+            "action": "opensearch",
+            "search": assunto,
+            "limit": 1,
+            "format": "json"
+        })
+        url_busca = f"{API_BUSCA_URL}?{parametros_busca}"
+        
+        requisicao_busca = urllib.request.Request(url_busca, headers={'User-Agent': 'CameraJovi_StudyAI/1.0'})
+        with urllib.request.urlopen(requisicao_busca, timeout=5) as resposta_busca:
+            resultado_busca = json.load(resposta_busca)
+            titulos = resultado_busca[1]
+            if not titulos:
+                return "Assunto nao encontrado na base de dados da Wikipedia. Verifique se o nome da foto esta escrito corretamente (ex: 'Mitose', 'Guerra Fria')."
+            titulo_oficial = titulos[0]
+
+        # ETAPA 2: Formata a URL com o título oficial e consome a API de resumo
+        termo_formatado = urllib.parse.quote(titulo_oficial) # Converte espaços e acentos para formato web
+        url = API_WIKIPEDIA_URL + termo_formatado
+        
         # A Wikipedia exige um cabeçalho User-Agent para saber quem está acessando
         requisicao = urllib.request.Request(url, headers={'User-Agent': 'CameraJovi_StudyAI/1.0'})
         with urllib.request.urlopen(requisicao, timeout=5) as resposta:
@@ -186,7 +207,7 @@ def buscar_resumo_wikipedia(assunto):
 
 def wikipedia_ai(fotos):
     # ENTRADA: recebe a lista de fotos cadastradas
-    # PROCESSAMENTO: lista as fotos, pede para o usuario escolher uma e busca o resumo do assunto (nome da foto)
+    # PROCESSAMENTO: lista as fotos, pede para o usuario escolher uma e busca o resumo do assunto (nome da foto) formatado no terminal e após isso salva o resumo em um arquivo de texto e exibe uma mensagem de confirmação
     # SAÍDA: exibe um resumo enciclopedico sobre o assunto da foto
     print("\n=== WIKIPEDIA AI - RESUMO DO ASSUNTO ===")
     if not existem_fotos(fotos):
@@ -206,8 +227,17 @@ def wikipedia_ai(fotos):
     print("\n" + "="*50)
     print(f"RESUMO: {assunto.upper()}")
     print("="*50)
-    print(resumo)
+    
+    # O textwrap.fill vai garantir que nenhuma linha passe de 80 caracteres
+    resumo_formatado = textwrap.fill(resumo, width=80) 
+    print(resumo_formatado)
+    
     print("="*50)
+
+    # escrever novo texto em arquivo de resumo, com o nome do assunto
+    with open(f"resumo_{assunto}.txt", "w", encoding="utf-8") as f:
+        f.write(resumo_formatado)
+    print(f"\nResumo também salvo no arquivo 'resumo_{assunto}.txt'")
     
     aguardar_enter()
 
