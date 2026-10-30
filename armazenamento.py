@@ -69,3 +69,18 @@ def carregar_fotos():
     if ignorados:
         print(f"AVISO: {ignorados} registro(s) invalido(s) ignorado(s) ao carregar.")
     return fotos
+
+def salvar_resumo(assunto, texto):
+    # ENTRADA: recebe o assunto (nome da foto) e o texto do resumo
+    # PROCESSAMENTO: monta um nome de arquivo seguro (sem caracteres proibidos como / \ : * ? " < > |) e grava o texto
+    # SAÍDA: retorna o nome do arquivo gravado, ou None se houve erro de escrita
+    nome_seguro = "".join(c if c.isalnum() or c in " -_" else "_" for c in assunto).strip()
+    nome_arquivo = f"resumo_{nome_seguro or 'sem_nome'}.txt"
+
+    try:
+        with open(nome_arquivo, "w", encoding="utf-8") as arquivo:
+            arquivo.write(texto)
+        return nome_arquivo
+    except OSError:
+        print(f"AVISO: nao foi possivel salvar o resumo em {nome_arquivo}.")
+        return None

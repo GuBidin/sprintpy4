@@ -15,7 +15,7 @@ API_BUSCA_URL = "https://pt.wikipedia.org/w/api.php"
 def buscar_resumo_wikipedia(assunto):
     # ENTRADA: o assunto/nome da foto (ex: "Revolucao Francesa")
     # PROCESSAMENTO: busca o termo inteligente na Wikipedia e consome a API para pegar um resumo
-    # SAÍDA: retorna o texto de resumo ou uma mensagem de erro
+    # SAÍDA: retorna uma tupla (sucesso, texto): (True, resumo) ou (False, mensagem de erro)
     try:
         # ETAPA 1: Usa o OpenSearch da Action API para encontrar o título oficial correto (ex: "pitagoras" -> "Pitágoras")
         parametros_busca = urllib.parse.urlencode({
@@ -31,7 +31,7 @@ def buscar_resumo_wikipedia(assunto):
             resultado_busca = json.load(resposta_busca)
             titulos = resultado_busca[1]
             if not titulos:
-                return "Assunto nao encontrado na base de dados da Wikipedia. Verifique se o nome da foto esta escrito corretamente (ex: 'Mitose', 'Guerra Fria')."
+                return False, "Assunto nao encontrado na base de dados da Wikipedia. Verifique se o nome da foto esta escrito corretamente (ex: 'Mitose', 'Guerra Fria')."
             titulo_oficial = titulos[0]
 
         # ETAPA 2: Formata a URL com o título oficial e consome a API de resumo
@@ -43,11 +43,14 @@ def buscar_resumo_wikipedia(assunto):
         with urllib.request.urlopen(requisicao, timeout=5) as resposta:
             dados = json.load(resposta)
             # Retorna a chave "extract", que contém o resumo em texto puro
-            return dados.get("extract", "Resumo nao disponivel para este termo.")
+            resumo = dados.get("extract")
+            if not resumo:
+                return False, "Resumo nao disponivel para este termo."
+            return True, resumo
 
     except urllib.error.HTTPError as erro:
         if erro.code == 404:
-            return "Assunto nao encontrado na base de dados da Wikipedia. Verifique se o nome da foto esta escrito corretamente (ex: 'Mitose', 'Guerra Fria')."
-        return f"Erro ao acessar a Wikipedia (Codigo: {erro.code})."
-    except (OSError, ValueError, TypeError):
-        return "AVISO: Nao foi possivel conectar a Wikipedia. Verifique sua internet."
+            return False, "Assunto nao encontrado na base de dados da Wikipedia. Verifique se o nome da foto esta escrito corretamente (ex: 'Mitose', 'Guerra Fria')."
+        return False, f"Erro ao acessar a Wikipedia (Codigo: {erro.code})."
+    except (OSError, ValueError, TypeError, IndexError):
+        return False, "AVISO: Nao foi possivel conectar a Wikipedia. Verifique sua internet."

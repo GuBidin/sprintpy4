@@ -1,7 +1,7 @@
 import textwrap  # define uma largura máxima para a linha (por exemplo, 80 caracteres), e ela mesma quebra o texto em várias linhas nos espaços em branco, sem cortar palavras no meio.
 from datetime import datetime
 
-from armazenamento import salvar_fotos
+from armazenamento import salvar_fotos, salvar_resumo
 from servicosAPI import buscar_resumo_wikipedia
 
 # ========== CONSTANTES ==========
@@ -324,7 +324,13 @@ def wikipedia_ai(fotos):
     assunto = foto_escolhida["nome"]
 
     print(f"\nConsultando a Wikipedia sobre '{assunto}'...")
-    resumo = buscar_resumo_wikipedia(assunto)
+    sucesso, resumo = buscar_resumo_wikipedia(assunto)
+
+    # Se a consulta falhou, mostra o motivo e volta ao menu sem gravar arquivo
+    if not sucesso:
+        print(resumo)
+        aguardar_enter()
+        return
 
     print("\n" + "=" * 50)
     print(f"RESUMO: {assunto.upper()}")
@@ -336,9 +342,9 @@ def wikipedia_ai(fotos):
 
     print("=" * 50)
 
-    # escrever novo texto em arquivo de resumo, com o nome do assunto
-    with open(f"resumo_{assunto}.txt", "w", encoding="utf-8") as f:
-        f.write(resumo_formatado)
-    print(f"\nResumo também salvo no arquivo 'resumo_{assunto}.txt'")
+    # Persiste o resumo em arquivo de texto (o tratamento de erro fica em salvar_resumo)
+    nome_arquivo = salvar_resumo(assunto, resumo_formatado)
+    if nome_arquivo:
+        print(f"\nResumo tambem salvo no arquivo '{nome_arquivo}'")
 
     aguardar_enter()
